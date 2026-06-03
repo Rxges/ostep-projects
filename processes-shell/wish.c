@@ -74,14 +74,14 @@ int main(int argc, char *argv[]) {
                 }
                 exit(0);
             } else if(strcmp(cmd_argv[0], "cd") == 0) {
-                if(cmd_argv[2] != NULL || cmd_argv[1] == NULL) {
+                if(cmd_argv[2] != NULL || cmd_argv[1] == NULL
+                    || (chdir(cmd_argv[1]) == -1)) {    // int chdir(const char *path);
                     // error (cd should only have two args total)
+                    // return of -1 from chdir also indicates error
                     error();
-                } else {
-
                 }
             } else if(strcmp(cmd_argv[0], "path") == 0) {
-
+                
             }
 
             // other commands 
