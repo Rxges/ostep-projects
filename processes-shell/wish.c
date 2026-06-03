@@ -5,9 +5,20 @@
 #include <string.h>
 #include <sys/wait.h>
 
+#define MAXCMD 32
+char* pathDirs[MAXCMD];
+int pathCount = 0;
+
 void error() {
     char error_message[30] = "An error has occurred\n";
     write(STDERR_FILENO, error_message, strlen(error_message)); 
+}
+
+void freeStrdup(char** arr, size_t size) {
+    for(size_t i = 0; i < size; i++) {
+        free(arr[i]);  // strdup uses malloc to allocate string onto the heap
+        arr[i] = NULL;
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -26,6 +37,15 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
+    // typedef struct List {
+    //     char* str;
+    //     struct List* next;
+    // } List;
+    // List* pathList = malloc(sizeof(List)); // make sure to free pathList later
+    pathDirs[0] = strdup("/bin");
+    pathCount = 1;
+    pathDirs[1] = NULL;
+
     while(1) {
         char *line = NULL;
         size_t len = 0;
@@ -40,13 +60,23 @@ int main(int argc, char *argv[]) {
             nread = getline(&line, &len, stream); 
         }
 
+        if(nread == -1) { // hit end-of-file marker (EOF)
+            if(stream) {
+                // if read from file
+                fclose(stream);
+            }
+            free(line);
+            freeStrdup(pathDirs, pathCount);
+            exit(0);
+        }
+
         char* cmd_argv[len];
         const char *delim = ",; \n";
         char* token = strtok(line, delim); //char *strtok(char *str, const char *delim);
         // char* token = strsep(&line, delim); //char *strsep(char **stringp, const char *delim);
         size_t index = 0;
         while(token != NULL) {            
-            cmd_argv[index] = strdup(token);
+            cmd_argv[index] = strdup(token);    // TODO do i have to free this later bc of strdup?
             // printf("cmd_argv[%ld]: %s\n", index, cmd_argv[index]);
             index++;
             // Subsequent calls: pass NULL to keep parsing the same string
@@ -57,22 +87,20 @@ int main(int argc, char *argv[]) {
         
         free(line);
 
-        if(nread == -1) { // hit end-of-file marker (EOF)
-            if(stream) {
-                // if read from file
-                fclose(stream);
-            }
-            exit(0);
-        }
-
         if(cmd_argv[0] != NULL) { // ensures there was an input (avoids seg fault if you just press enter)
             // built-in commands
             if(strcmp(cmd_argv[0], "exit") == 0) {
-                if(stream) {
-                    // if read from file
-                    fclose(stream);
+                if(cmd_argv[1] != NULL) {
+    error();
+                } else {
+                    if(stream) {
+                        // if read from file
+                        fclose(stream);
+                    }
+                    freeStrdup(pathDirs, pathCount);
+                    freeStrdup(cmd_argv, index);
+                    exit(0);
                 }
-                exit(0);
             } else if(strcmp(cmd_argv[0], "cd") == 0) {
                 if(cmd_argv[2] != NULL || cmd_argv[1] == NULL
                     || (chdir(cmd_argv[1]) == -1)) {    // int chdir(const char *path);
@@ -81,7 +109,15 @@ int main(int argc, char *argv[]) {
                     error();
                 }
             } else if(strcmp(cmd_argv[0], "path") == 0) {
-                
+                freeStrdup(pathDirs, pathCount);
+                pathCount = 0;
+                int i = 1;
+                while(cmd_argv[i] != NULL) {
+                    pathDirs[pathCount] = strdup(cmd_argv[i]);  // TODO test with cmd_argv[index] later to see if i need free()
+                    pathCount++;
+                    i++;
+                }
+                pathDirs[pathCount] = NULL;
             }
 
             // other commands 
@@ -101,11 +137,11 @@ int main(int argc, char *argv[]) {
                     // parent
                     (void) wait(NULL);
                     // printf("parent pid: %d, child pid: %d\n", (int)getpid(), rc);
-                } else {
-                    // failure
-                }
+                } // else { // failure}
             }
         }
+
+        freeStrdup(cmd_argv, index);
     }
 
     return 0;
