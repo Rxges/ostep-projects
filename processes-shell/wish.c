@@ -5,6 +5,10 @@
 #include <string.h>
 #include <sys/wait.h>
 
+void error() {
+    char error_message[30] = "An error has occurred\n";
+    write(STDERR_FILENO, error_message, strlen(error_message)); 
+}
 
 int main(int argc, char *argv[]) {
 
@@ -15,6 +19,11 @@ int main(int argc, char *argv[]) {
             perror("fopen");
             exit(EXIT_FAILURE);
         }
+    } 
+    // if the shell is invoked with more than one file, or if the shell is 
+    // passed a bad batch file, it should exit by calling exit(1)
+    else if(argc > 2) {
+        exit(1);
     }
 
     while(1) {
@@ -57,13 +66,26 @@ int main(int argc, char *argv[]) {
         }
 
         if(cmd_argv[0] != NULL) { // ensures there was an input (avoids seg fault if you just press enter)
+            // built-in commands
             if(strcmp(cmd_argv[0], "exit") == 0) {
                 if(stream) {
                     // if read from file
                     fclose(stream);
                 }
                 exit(0);
-            } else {
+            } else if(strcmp(cmd_argv[0], "cd") == 0) {
+                if(cmd_argv[2] != NULL || cmd_argv[1] == NULL) {
+                    // error (cd should only have two args total)
+                    error();
+                } else {
+
+                }
+            } else if(strcmp(cmd_argv[0], "path") == 0) {
+
+            }
+
+            // other commands 
+            else {
                 int rc = fork();
                 
                 // creates new process
@@ -71,8 +93,10 @@ int main(int argc, char *argv[]) {
                     // child
                     execvp(cmd_argv[0], cmd_argv);
                     // execv(cmd_argv[0], cmd_argv);
-                    printf("An error has occurred\n"); // if successful, doesn't return (aka doesn't print)
 
+                    // if successful, doesn't return (aka doesn't print / run error())
+                    error();
+                    // printf("An error has occurred\n"); 
                 } else if (rc > 0) {
                     // parent
                     (void) wait(NULL);
@@ -86,3 +110,5 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
+
+
