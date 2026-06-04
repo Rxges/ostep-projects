@@ -86,7 +86,7 @@ int main(int argc, char *argv[]) {
             // printf("cmd_argv[%ld]: %s\n", index, cmd_argv[index]);
 
             // check for redirection:
-            if(strcmp(token, ">") == 0) {
+            if(strcmp(token, ">") == 0 && redirectionIndex == -1) {
                 redirectionIndex = index;
             }
 
