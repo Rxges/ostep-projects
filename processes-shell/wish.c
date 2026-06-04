@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <stdbool.h>
 
 #define MAXCMD 32
 char* pathDirs[MAXCMD];
@@ -77,6 +78,7 @@ int main(int argc, char *argv[]) {
         size_t index = 0;
         while(token != NULL) {            
             cmd_argv[index] = strdup(token);    // TODO do i have to free this later bc of strdup?
+            // strcpy(cmd_argv[index], token); // strcpy(dest, source);  // use strdup not strcpy otherwise issues with memory allocation (seg fault)
             // printf("cmd_argv[%ld]: %s\n", index, cmd_argv[index]);
             index++;
             // Subsequent calls: pass NULL to keep parsing the same string
@@ -91,7 +93,7 @@ int main(int argc, char *argv[]) {
             // built-in commands
             if(strcmp(cmd_argv[0], "exit") == 0) {
                 if(cmd_argv[1] != NULL) {
-    error();
+                    error();
                 } else {
                     if(stream) {
                         // if read from file
@@ -122,22 +124,43 @@ int main(int argc, char *argv[]) {
 
             // other commands 
             else {
-                int rc = fork();
-                
-                // creates new process
-                if(rc == 0) {
-                    // child
-                    execvp(cmd_argv[0], cmd_argv);
-                    // execv(cmd_argv[0], cmd_argv);
+                bool validCmd = false;
+                // char* path = "";
+                char path[1024];
+                //int snprintf(char *str, size_t size, const char *format, ...);
+                //int access(const char *pathname, int mode);
+                for(int i = 0; i < pathCount; i++) {
+                    size_t pathCharLen = strlen(pathDirs[i]) + strlen(cmd_argv[0]) + 2; // +1 for '/' and +1 for \n
+                    snprintf(path, pathCharLen, "%s/%s", pathDirs[i], cmd_argv[0]);
+                    if(access(path, X_OK) == 0) {
+                        // success
+                        validCmd = true;
+                        break;
+                    }
+                }
 
-                    // if successful, doesn't return (aka doesn't print / run error())
+                if(validCmd) {
+                    int rc = fork();
+                    
+                    // creates new process
+                    if(rc == 0) {
+                        // child
+                        // execvp(cmd_argv[0], cmd_argv);
+                        // execv(cmd_argv[0], cmd_argv);
+                        execv(path, cmd_argv);
+
+                        // failed (error)
+                        // if successful, doesn't return (aka doesn't print / run error())
+                        error();
+                        // printf("An error has occurred\n"); 
+                    } else if (rc > 0) {
+                        // parent
+                        (void) wait(NULL);
+                        // printf("parent pid: %d, child pid: %d\n", (int)getpid(), rc);
+                    } // else failure
+                } else {
                     error();
-                    // printf("An error has occurred\n"); 
-                } else if (rc > 0) {
-                    // parent
-                    (void) wait(NULL);
-                    // printf("parent pid: %d, child pid: %d\n", (int)getpid(), rc);
-                } // else { // failure}
+                }
             }
         }
 
