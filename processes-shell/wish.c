@@ -5,6 +5,9 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <stdbool.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #define MAXCMD 32
 char* pathDirs[MAXCMD];
@@ -76,10 +79,17 @@ int main(int argc, char *argv[]) {
         char* token = strtok(line, delim); //char *strtok(char *str, const char *delim);
         // char* token = strsep(&line, delim); //char *strsep(char **stringp, const char *delim);
         size_t index = 0;
+        int redirectionIndex = -1;
         while(token != NULL) {            
             cmd_argv[index] = strdup(token);    // TODO do i have to free this later bc of strdup?
             // strcpy(cmd_argv[index], token); // strcpy(dest, source);  // use strdup not strcpy otherwise issues with memory allocation (seg fault)
             // printf("cmd_argv[%ld]: %s\n", index, cmd_argv[index]);
+
+            // check for redirection:
+            if(strcmp(token, ">") == 0) {
+                redirectionIndex = index;
+            }
+
             index++;
             // Subsequent calls: pass NULL to keep parsing the same string
             token = strtok(NULL, delim); 
@@ -145,14 +155,37 @@ int main(int argc, char *argv[]) {
                     // creates new process
                     if(rc == 0) {
                         // child
-                        // execvp(cmd_argv[0], cmd_argv);
-                        // execv(cmd_argv[0], cmd_argv);
-                        execv(path, cmd_argv);
 
-                        // failed (error)
-                        // if successful, doesn't return (aka doesn't print / run error())
-                        error();
-                        // printf("An error has occurred\n"); 
+                        // redirection
+                        bool redirectionErr = false;
+                        if(redirectionIndex != -1) {
+                            if(cmd_argv[redirectionIndex+1] == NULL || cmd_argv[redirectionIndex+2] != NULL) {
+                                redirectionErr = true;
+                                error();
+                            } else {
+                                int fd = open(cmd_argv[redirectionIndex+1], O_WRONLY | O_CREAT | O_TRUNC); // int open(const char *pathname, int flags);
+                                // fd is a file descriptor integer that refers to the open file (or -1 if error)
+                                // flags: 
+                                // O_WRONLY - write only access mode
+                                // O_CREAT - creates output file (called cmd_argv[redirectionIndex+1]) if it does not exist
+                                // O_TRUNC - if file already exists, it will be truncated to length 0
+
+                                if (fd == -1 || dup2(fd, STDOUT_FILENO) == -1) { //int dup2(int oldfd, int newfd);
+                                    redirectionErr = true;
+                                    error();
+                                }
+                            }
+                        }
+
+                        if(!redirectionErr) {
+                            // execvp(cmd_argv[0], cmd_argv);
+                            execv(path, cmd_argv);
+
+                            // failed (error)
+                            // if successful, doesn't return (aka doesn't print / run error())
+                            error();
+                            // printf("An error has occurred\n"); 
+                        }
                     } else if (rc > 0) {
                         // parent
                         (void) wait(NULL);
