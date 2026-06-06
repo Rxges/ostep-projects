@@ -9,6 +9,8 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
+#include <errno.h>
+
 #define MAXCMD 32
 char* pathDirs[MAXCMD];
 int pathCount = 0;
@@ -79,17 +81,40 @@ int main(int argc, char *argv[]) {
         char* token = strtok(line, delim); //char *strtok(char *str, const char *delim);
         // char* token = strsep(&line, delim); //char *strsep(char **stringp, const char *delim);
         size_t index = 0;
-        int redirectionIndex = -1;
-        while(token != NULL) {            
+        char* redirPtr = NULL;
+        char* outputFile = NULL;
+        bool err = false;
+        while(token != NULL) {       
+            // check for redirection:
+            if(strcmp(token, ">") == 0) {
+                outputFile = strtok(NULL, delim);
+                if(!outputFile) {
+                    error();
+                    err = true;
+                } else {
+                    outputFile = strdup(outputFile);
+                }
+                if(strtok(NULL, delim) || index == 0) {
+                    error();
+                    err = true;
+                }
+
+                break;
+            } else if((redirPtr = strchr(token, '>')) != NULL) {
+                // int chIndex = redirPtr - cmd_argv[index];
+                outputFile = strdup(redirPtr + 1);   // output file
+                *redirPtr = '\0';
+                cmd_argv[index] = strdup(token);
+                index++;
+                if(!outputFile || strtok(NULL, delim)) {
+                    error();
+                    err = true;
+                }
+                break;
+            } 
             cmd_argv[index] = strdup(token);    // TODO do i have to free this later bc of strdup?
             // strcpy(cmd_argv[index], token); // strcpy(dest, source);  // use strdup not strcpy otherwise issues with memory allocation (seg fault)
             // printf("cmd_argv[%ld]: %s\n", index, cmd_argv[index]);
-
-            // check for redirection:
-            if(strcmp(token, ">") == 0 && redirectionIndex == -1) {
-                redirectionIndex = index;
-            }
-
             index++;
             // Subsequent calls: pass NULL to keep parsing the same string
             token = strtok(NULL, delim); 
@@ -99,7 +124,7 @@ int main(int argc, char *argv[]) {
         
         free(line);
 
-        if(cmd_argv[0] != NULL) { // ensures there was an input (avoids seg fault if you just press enter)
+        if(cmd_argv[0] != NULL && !err) { // ensures there was an input (avoids seg fault if you just press enter)
             // built-in commands
             if(strcmp(cmd_argv[0], "exit") == 0) {
                 if(cmd_argv[1] != NULL) {
@@ -158,22 +183,20 @@ int main(int argc, char *argv[]) {
 
                         // redirection
                         bool redirectionErr = false;
-                        if(redirectionIndex != -1) {
-                            if(cmd_argv[redirectionIndex+1] == NULL || cmd_argv[redirectionIndex+2] != NULL) {
+                        if(outputFile) {
+                            int fd = open(outputFile, O_WRONLY | O_CREAT | O_TRUNC, 0644); // int open(const char *pathname, int flags);
+                            // fd is a file descriptor integer that refers to the open file (or -1 if error)
+                            // flags: 
+                            // O_WRONLY - write only access mode
+                            // O_CREAT - creates output file (called outputFile) if it does not exist
+                            // O_TRUNC - if file already exists, it will be truncated to length 0
+                            // file permission:
+                            // S_IRUSR - user has read permission
+                            // S_IWUSR - user has write permission
+
+                            if (fd == -1 || dup2(fd, STDOUT_FILENO) == -1) { //int dup2(int oldfd, int newfd);
                                 redirectionErr = true;
                                 error();
-                            } else {
-                                int fd = open(cmd_argv[redirectionIndex+1], O_WRONLY | O_CREAT | O_TRUNC); // int open(const char *pathname, int flags);
-                                // fd is a file descriptor integer that refers to the open file (or -1 if error)
-                                // flags: 
-                                // O_WRONLY - write only access mode
-                                // O_CREAT - creates output file (called cmd_argv[redirectionIndex+1]) if it does not exist
-                                // O_TRUNC - if file already exists, it will be truncated to length 0
-
-                                if (fd == -1 || dup2(fd, STDOUT_FILENO) == -1) { //int dup2(int oldfd, int newfd);
-                                    redirectionErr = true;
-                                    error();
-                                }
                             }
                         }
 
@@ -198,6 +221,10 @@ int main(int argc, char *argv[]) {
         }
 
         freeStrdup(cmd_argv, index);
+        if (outputFile) {
+            free(outputFile);
+            outputFile = NULL;
+        }
     }
 
     return 0;
