@@ -33,13 +33,14 @@ int main(int argc, char *argv[]) {
     if(argc == 2) {
         stream = fopen(argv[1], "r");
         if (stream == NULL) {
-            perror("fopen");
-            exit(EXIT_FAILURE);
+            // file or directory in argv[1] is nonexistent
+            error();
+            exit(1);
         }
-    } 
-    // if the shell is invoked with more than one file, or if the shell is 
-    // passed a bad batch file, it should exit by calling exit(1)
-    else if(argc > 2) {
+    } else if(argc > 2) {
+        // if the shell is invoked with more than one file, or if the shell is 
+        // passed a bad batch file, it should exit by calling exit(1)
+        error();
         exit(1);
     }
 
@@ -65,7 +66,7 @@ int main(int argc, char *argv[]) {
             // read from file
             nread = getline(&line, &len, stream); 
         }
-
+    
         if(nread == -1) { // hit end-of-file marker (EOF)
             if(stream) {
                 // if read from file
@@ -212,13 +213,12 @@ int main(int argc, char *argv[]) {
                     } else if (rc > 0) {
                         // parent
                         (void) wait(NULL);
-                        // printf("parent pid: %d, child pid: %d\n", (int)getpid(), rc);
                     } // else failure
                 } else {
                     error();
                 }
             }
-        }
+        } 
 
         freeStrdup(cmd_argv, index);
         if (outputFile) {
