@@ -90,9 +90,9 @@ int main(int argc, char *argv[]) {
         int cmd_indexes[MAXCMD];
         cmd_indexes[0] = 0;
         size_t arrIndex = 1;
+        char* parallelPtr = NULL;
         while(token != NULL) {       
-            // check for redirection:
-            if(strcmp(token, ">") == 0) {
+            if(strcmp(token, ">") == 0) { // redirection
                 outputFile = strtok(NULL, delim);
                 if(!outputFile) {
                     error();
@@ -117,11 +117,21 @@ int main(int argc, char *argv[]) {
                     err = true;
                 }
                 break;
-            } else if(strcmp(token, "&") == 0) {
-                 // check for parallel commands:
+            } else if(strcmp(token, "&") == 0) { // parallel commands
                 cmd_argv[index] = NULL;
                 cmd_indexes[arrIndex] = index+1;    // make sure when going through loop of cmd_indexes, ignore last index
                 arrIndex++;
+            } else if((parallelPtr = strchr(token, '&')) != NULL) { // parallel commands
+                while(((parallelPtr = strchr(token, '&')) != NULL)) {
+                    cmd_argv[index+2] = strdup(parallelPtr + 1);
+                    cmd_argv[index+1] = NULL; 
+                    cmd_indexes[arrIndex] = index+2;
+                    arrIndex++;
+                    *parallelPtr = '\0';
+                    cmd_argv[index] = strdup(token);
+                    index+=2;
+                    token = cmd_argv[index];
+                }
             } else {
                 cmd_argv[index] = strdup(token);    // TODO do i have to free this later bc of strdup?
                 // strcpy(cmd_argv[index], token); // strcpy(dest, source);  // use strdup not strcpy otherwise issues with memory allocation (seg fault)
@@ -171,11 +181,13 @@ int main(int argc, char *argv[]) {
 
             // other commands 
             else {
+                size_t iterations = arrIndex;
                 for(size_t i = 0; i < arrIndex; i++) {
                     char** shifted_argv = &cmd_argv[cmd_indexes[i]]; // == cmd_argv + cmd_indexes[i];
                     if(shifted_argv[0] == NULL) {
                         // empty command
-                        break;
+                        iterations--;
+                        continue;
                     }
 
 
@@ -230,19 +242,26 @@ int main(int argc, char *argv[]) {
                                 error();
                                 // printf("An error has occurred\n"); 
                             }
-                        } else if (rc > 0) {
-                            // parent
-                            if(i == arrIndex-1) {
-                                for(size_t i = 0; i < arrIndex; i++) {
-                                    (void) wait(NULL);
-                                }
-                            }
-                            // (void) wait(NULL);
-                        } // else failure
+                        } 
+                        // else if (rc > 0) {
+                        //     // parent
+                        //     if(i == arrIndex-1) {
+                        //         for(size_t i = 0; i < arrIndex; i++) {
+                        //             (void) wait(NULL);
+                        //         }
+                        //     }
+                        //     // (void) wait(NULL);
+                        // } // else failure
                     } else {
                         error();
                     }
                 } 
+
+                // parent
+                for(size_t i = 0; i < iterations; i++) {
+                    (void) wait(NULL);
+                }
+
             }
         } 
 
