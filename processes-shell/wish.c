@@ -20,10 +20,12 @@ void error() {
     write(STDERR_FILENO, error_message, strlen(error_message)); 
 }
 
-void freeStrdup(char** arr, size_t size) {
-    for(size_t i = 0; i < size; i++) {
+void freeStrdup(char** arr) {
+    size_t i = 0;
+    while(arr[i] != NULL) {
         free(arr[i]);  // strdup uses malloc to allocate string onto the heap
         arr[i] = NULL;
+        i++;
     }
 }
 
@@ -73,7 +75,7 @@ int main(int argc, char *argv[]) {
                 fclose(stream);
             }
             free(line);
-            freeStrdup(pathDirs, pathCount);
+            freeStrdup(pathDirs);
             exit(0);
         }
 
@@ -85,6 +87,9 @@ int main(int argc, char *argv[]) {
         char* redirPtr = NULL;
         char* outputFile = NULL;
         bool err = false;
+        int cmd_indexes[MAXCMD];
+        cmd_indexes[0] = 0;
+        size_t arrIndex = 1;
         while(token != NULL) {       
             // check for redirection:
             if(strcmp(token, ">") == 0) {
@@ -101,7 +106,7 @@ int main(int argc, char *argv[]) {
                 }
 
                 break;
-            } else if((redirPtr = strchr(token, '>')) != NULL) {
+            } else if((redirPtr = strchr(token, '>')) != NULL) { // redirection
                 // int chIndex = redirPtr - cmd_argv[index];
                 outputFile = strdup(redirPtr + 1);   // output file
                 *redirPtr = '\0';
@@ -112,9 +117,15 @@ int main(int argc, char *argv[]) {
                     err = true;
                 }
                 break;
-            } 
-            cmd_argv[index] = strdup(token);    // TODO do i have to free this later bc of strdup?
-            // strcpy(cmd_argv[index], token); // strcpy(dest, source);  // use strdup not strcpy otherwise issues with memory allocation (seg fault)
+            } else if(strcmp(token, "&") == 0) {
+                 // check for parallel commands:
+                cmd_argv[index] = NULL;
+                cmd_indexes[arrIndex] = index+1;    // make sure when going through loop of cmd_indexes, ignore last index
+                arrIndex++;
+            } else {
+                cmd_argv[index] = strdup(token);    // TODO do i have to free this later bc of strdup?
+                // strcpy(cmd_argv[index], token); // strcpy(dest, source);  // use strdup not strcpy otherwise issues with memory allocation (seg fault)
+            }
             // printf("cmd_argv[%ld]: %s\n", index, cmd_argv[index]);
             index++;
             // Subsequent calls: pass NULL to keep parsing the same string
@@ -135,8 +146,8 @@ int main(int argc, char *argv[]) {
                         // if read from file
                         fclose(stream);
                     }
-                    freeStrdup(pathDirs, pathCount);
-                    freeStrdup(cmd_argv, index);
+                    freeStrdup(pathDirs);
+                    freeStrdup(cmd_argv);
                     exit(0);
                 }
             } else if(strcmp(cmd_argv[0], "cd") == 0) {
@@ -147,7 +158,7 @@ int main(int argc, char *argv[]) {
                     error();
                 }
             } else if(strcmp(cmd_argv[0], "path") == 0) {
-                freeStrdup(pathDirs, pathCount);
+                freeStrdup(pathDirs);
                 pathCount = 0;
                 int i = 1;
                 while(cmd_argv[i] != NULL) {
@@ -160,67 +171,82 @@ int main(int argc, char *argv[]) {
 
             // other commands 
             else {
-                bool validCmd = false;
-                // char* path = "";
-                char path[1024];
-                //int snprintf(char *str, size_t size, const char *format, ...);
-                //int access(const char *pathname, int mode);
-                for(int i = 0; i < pathCount; i++) {
-                    size_t pathCharLen = strlen(pathDirs[i]) + strlen(cmd_argv[0]) + 2; // +1 for '/' and +1 for \n
-                    snprintf(path, pathCharLen, "%s/%s", pathDirs[i], cmd_argv[0]);
-                    if(access(path, X_OK) == 0) {
-                        // success
-                        validCmd = true;
+                for(size_t i = 0; i < arrIndex; i++) {
+                    char** shifted_argv = &cmd_argv[cmd_indexes[i]]; // == cmd_argv + cmd_indexes[i];
+                    if(shifted_argv[0] == NULL) {
+                        // empty command
                         break;
                     }
-                }
 
-                if(validCmd) {
-                    int rc = fork();
-                    
-                    // creates new process
-                    if(rc == 0) {
-                        // child
 
-                        // redirection
-                        bool redirectionErr = false;
-                        if(outputFile) {
-                            int fd = open(outputFile, O_WRONLY | O_CREAT | O_TRUNC, 0644); // int open(const char *pathname, int flags);
-                            // fd is a file descriptor integer that refers to the open file (or -1 if error)
-                            // flags: 
-                            // O_WRONLY - write only access mode
-                            // O_CREAT - creates output file (called outputFile) if it does not exist
-                            // O_TRUNC - if file already exists, it will be truncated to length 0
-                            // file permission:
-                            // S_IRUSR - user has read permission
-                            // S_IWUSR - user has write permission
+                    bool validCmd = false;
+                    // char* path = "";
+                    char path[1024];
+                    //int snprintf(char *str, size_t size, const char *format, ...);
+                    //int access(const char *pathname, int mode);
+                    for(int i = 0; i < pathCount; i++) {
+                        size_t pathCharLen = strlen(pathDirs[i]) + strlen(shifted_argv[0]) + 2; // +1 for '/' and +1 for \n
+                        snprintf(path, pathCharLen, "%s/%s", pathDirs[i], shifted_argv[0]);
+                        if(access(path, X_OK) == 0) {
+                            // success
+                            validCmd = true;
+                            break;
+                        }
+                    }
 
-                            if (fd == -1 || dup2(fd, STDOUT_FILENO) == -1) { //int dup2(int oldfd, int newfd);
-                                redirectionErr = true;
-                                error();
+                    if(validCmd) {
+                        int rc = fork();
+
+                        // creates new process
+                        if(rc == 0) {
+                            // child
+
+                            // redirection
+                            bool redirectionErr = false;
+                            if(outputFile) {
+                                int fd = open(outputFile, O_WRONLY | O_CREAT | O_TRUNC, 0644); // int open(const char *pathname, int flags);
+                                // fd is a file descriptor integer that refers to the open file (or -1 if error)
+                                // flags: 
+                                // O_WRONLY - write only access mode
+                                // O_CREAT - creates output file (called outputFile) if it does not exist
+                                // O_TRUNC - if file already exists, it will be truncated to length 0
+                                // file permission:
+                                // S_IRUSR - user has read permission
+                                // S_IWUSR - user has write permission
+
+                                if (fd == -1 || dup2(fd, STDOUT_FILENO) == -1) { //int dup2(int oldfd, int newfd);
+                                    redirectionErr = true;
+                                    error();
+                                }
                             }
-                        }
 
-                        if(!redirectionErr) {
-                            // execvp(cmd_argv[0], cmd_argv);
-                            execv(path, cmd_argv);
+                            if(!redirectionErr) {
+                                // execvp(cmd_argv[0], cmd_argv);
+                                // execv(path, cmd_argv);
+                                execv(path, shifted_argv);
 
-                            // failed (error)
-                            // if successful, doesn't return (aka doesn't print / run error())
-                            error();
-                            // printf("An error has occurred\n"); 
-                        }
-                    } else if (rc > 0) {
-                        // parent
-                        (void) wait(NULL);
-                    } // else failure
-                } else {
-                    error();
-                }
+                                // failed (error)
+                                // if successful, doesn't return (aka doesn't print / run error())
+                                error();
+                                // printf("An error has occurred\n"); 
+                            }
+                        } else if (rc > 0) {
+                            // parent
+                            if(i == arrIndex-1) {
+                                for(size_t i = 0; i < arrIndex; i++) {
+                                    (void) wait(NULL);
+                                }
+                            }
+                            // (void) wait(NULL);
+                        } // else failure
+                    } else {
+                        error();
+                    }
+                } 
             }
         } 
 
-        freeStrdup(cmd_argv, index);
+        freeStrdup(cmd_argv);
         if (outputFile) {
             free(outputFile);
             outputFile = NULL;
