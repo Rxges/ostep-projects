@@ -85,42 +85,46 @@ int main(int argc, char *argv[]) {
         // char* token = strsep(&line, delim); //char *strsep(char **stringp, const char *delim);
         size_t index = 0;
         char* redirPtr = NULL;
-        char* outputFile = NULL;
+        // char* outputFile = NULL;
         bool err = false;
+        bool redirection = false;
         int cmd_indexes[MAXCMD];
         cmd_indexes[0] = 0;
         size_t arrIndex = 1;
         char* parallelPtr = NULL;
+        char* outputFile[MAXCMD] = {NULL};
         while(token != NULL) {       
-            if(strcmp(token, ">") == 0) { // redirection
-                outputFile = strtok(NULL, delim);
-                if(!outputFile) {
+            if(strcmp(token, ">") == 0 && !redirection) { // redirection
+                char* fileName = strtok(NULL, delim);
+                if(!fileName) {
                     error();
                     err = true;
                 } else {
-                    outputFile = strdup(outputFile);
+                    outputFile[arrIndex-1] = strdup(fileName);
                 }
-                if(strtok(NULL, delim) || index == 0) {
+                if(index == 0) {    // strtok(NULL, delim) || 
                     error();
                     err = true;
                 }
-
-                break;
-            } else if((redirPtr = strchr(token, '>')) != NULL) { // redirection
+                redirection = true;
+                index--;
+            } else if((redirPtr = strchr(token, '>')) != NULL && !redirection) { // redirection
                 // int chIndex = redirPtr - cmd_argv[index];
-                outputFile = strdup(redirPtr + 1);   // output file
+                outputFile[arrIndex-1] = strdup(redirPtr + 1);   // output file
                 *redirPtr = '\0';
                 cmd_argv[index] = strdup(token);
                 index++;
-                if(!outputFile || strtok(NULL, delim)) {
+                if(!(outputFile[arrIndex-1])) { //  || strtok(NULL, delim)
                     error();
                     err = true;
                 }
-                break;
+                redirection = true;
+                index--;
             } else if(strcmp(token, "&") == 0) { // parallel commands
                 cmd_argv[index] = NULL;
                 cmd_indexes[arrIndex] = index+1;    // make sure when going through loop of cmd_indexes, ignore last index
                 arrIndex++;
+                redirection = false;
             } else if((parallelPtr = strchr(token, '&')) != NULL) { // parallel commands
                 while(((parallelPtr = strchr(token, '&')) != NULL)) {
                     cmd_argv[index+2] = strdup(parallelPtr + 1);
@@ -132,9 +136,16 @@ int main(int argc, char *argv[]) {
                     index+=2;
                     token = cmd_argv[index];
                 }
+                redirection = false;
             } else {
-                cmd_argv[index] = strdup(token);    // TODO do i have to free this later bc of strdup?
-                // strcpy(cmd_argv[index], token); // strcpy(dest, source);  // use strdup not strcpy otherwise issues with memory allocation (seg fault)
+                if(redirection) {
+                    error();
+                    err = true;
+                    break;
+                } else {
+                    cmd_argv[index] = strdup(token);    // TODO do i have to free this later bc of strdup?
+                    // strcpy(cmd_argv[index], token); // strcpy(dest, source);  // use strdup not strcpy otherwise issues with memory allocation (seg fault)
+                }
             }
             // printf("cmd_argv[%ld]: %s\n", index, cmd_argv[index]);
             index++;
@@ -215,8 +226,8 @@ int main(int argc, char *argv[]) {
 
                             // redirection
                             bool redirectionErr = false;
-                            if(outputFile) {
-                                int fd = open(outputFile, O_WRONLY | O_CREAT | O_TRUNC, 0644); // int open(const char *pathname, int flags);
+                            if(outputFile[i]) {
+                                int fd = open(outputFile[i], O_WRONLY | O_CREAT | O_TRUNC, 0644); // int open(const char *pathname, int flags);
                                 // fd is a file descriptor integer that refers to the open file (or -1 if error)
                                 // flags: 
                                 // O_WRONLY - write only access mode
@@ -245,14 +256,10 @@ int main(int argc, char *argv[]) {
                         } 
                         // else if (rc > 0) {
                         //     // parent
-                        //     if(i == arrIndex-1) {
-                        //         for(size_t i = 0; i < arrIndex; i++) {
-                        //             (void) wait(NULL);
-                        //         }
-                        //     }
                         //     // (void) wait(NULL);
                         // } // else failure
                     } else {
+                        iterations--;
                         error();
                     }
                 } 
@@ -266,9 +273,11 @@ int main(int argc, char *argv[]) {
         } 
 
         freeStrdup(cmd_argv);
-        if (outputFile) {
-            free(outputFile);
-            outputFile = NULL;
+        for(size_t i = 0; i < arrIndex; i++) {
+            if(outputFile[i]) {
+                free(outputFile[i]);
+                outputFile[i] = NULL;
+            }
         }
     }
 
